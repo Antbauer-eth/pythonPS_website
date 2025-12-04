@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STM32 Sound Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f4f8; }
+        #status-indicator { width: 12px; height: 12px; border-radius: 50%; }
+    </style>
+</head>
+<body class="p-4 sm:p-8 min-h-screen flex items-center justify-center">
+
+    <div id="app-container" class="w-full max-w-lg bg-white rounded-xl shadow-2xl p-6 sm:p-10 transition-all duration-300">
+        <h1 class="text-3xl font-extrabold text-gray-900 mb-6 text-center">
+            STM32 Sound Detection
+        </h1>
+        
+        <!-- Connection Status -->
+        <div class="flex items-center justify-center mb-6 p-3 bg-gray-100 rounded-lg">
+            <div id="status-indicator" class="mr-2 bg-red-500"></div>
+            <p id="connection-status" class="text-sm font-medium text-gray-700">Connecting to Broker...</p>
+        </div>
+
+        <!-- Detection Card -->
+        <div class="bg-indigo-600 p-8 rounded-xl shadow-lg text-white text-center">
+            <p class="text-lg font-semibold opacity-80 mb-2">Last Detected Sound:</p>
+            <h2 id="sound-output" class="text-6xl font-black mb-4">
+                ---
+            </h2>
+            <div class="flex justify-center items-center">
+                <p id="confidence-output" class="text-2xl font-bold bg-indigo-700 py-1 px-4 rounded-full">
+                    0%
+                </p>
+            </div>
+        </div>
+
+        <!-- Broker Info -->
+        <div class="mt-8 text-center text-sm text-gray-500">
+            <p>Broker: <span class="font-mono">broker.hivemq.com</span></p>
+            <p>Topic: <span class="font-mono">sound/report</span></p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt'; // Secure MQTT over WebSockets
+            const TOPIC = 'sound/report';
+            
+            const client = mqtt.connect(BROKER_URL);
+
+            const statusEl = document.getElementById('connection-status');
+            const statusIndicatorEl = document.getElementById('status-indicator');
+            const soundOutputEl = document.getElementById('sound-output');
+            const confidenceOutputEl = document.getElementById('confidence-output');
+
+            // --- Connection Handlers ---
+
+            client.on('connect', function () {
+                statusIndicatorEl.classList.remove('bg-red-500', 'bg-yellow-500');
+                statusIndicatorEl.classList.add('bg-green-500');
+                statusEl.textContent = 'Connected (MQTT)';
+                client.subscribe(TOPIC, function (err) {
+                    if (err) {
+                        statusEl.textContent = `Subscription Error: ${err}`;
+                    } else {
+                        statusEl.textContent = `Subscribed to ${TOPIC}`;
+                    }
+                });
+            });
+
+            client.on('reconnect', function () {
+                statusIndicatorEl.classList.remove('bg-red-500', 'bg-green-500');
+                statusIndicatorEl.classList.add('bg-yellow-500');
+                statusEl.textContent = 'Reconnecting...';
+            });
+
+            client.on('error', function (err) {
+                console.error("MQTT Error:", err);
+                statusIndicatorEl.classList.remove('bg-green-500', 'bg-yellow-500');
+                statusIndicatorEl.classList.add('bg-red-500');
+                statusEl.textContent = 'Connection Error';
+                client.end();
+            });
+
+            // --- Message Handler ---
+
+            client.on('message', function (topic, message) {
+                try {
+                    const data = JSON.parse(message.toString());
+                    if (topic === TOPIC) {
+                        const sound = data.sound || "UNKNOWN";
+                        const confidence = data.confidence || 0;
+
+                        // Update the display elements
+                        soundOutputEl.textContent = sound.toUpperCase();
+                        confidenceOutputEl.textContent = `${confidence}%`;
+
+                        // Simple color cue based on confidence
+                        let colorClass = 'bg-indigo-700';
+                        if (confidence > 90) {
+                            colorClass = 'bg-green-600';
+                        } else if (confidence > 75) {
+                            colorClass = 'bg-yellow-600';
+                        }
+                        confidenceOutputEl.className = `text-2xl font-bold py-1 px-4 rounded-full transition-colors duration-300 ${colorClass}`;
+                    }
+                } catch (e) {
+                    console.error("Failed to parse message:", message.toString(), e);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
