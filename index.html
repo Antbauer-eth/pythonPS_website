@@ -14,7 +14,6 @@
 
     <div class="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
         
-        <!-- Header -->
         <div class="bg-gray-900 p-6 text-center">
             <h1 class="text-2xl font-bold text-white tracking-wide">Sound Recognition</h1>
             <div class="flex items-center justify-center mt-2 space-x-2">
@@ -23,7 +22,6 @@
             </div>
         </div>
 
-        <!-- Main Area: Live Status -->
         <div class="p-10 text-center">
             <p class="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-2">Current Detection</p>
             
@@ -36,7 +34,6 @@
             </div>
         </div>
 
-        <!-- Footer: Last Detected Sound -->
         <div class="bg-gray-50 border-t border-gray-100 p-6 text-center">
             <p class="text-xs font-bold text-gray-400 mb-2">LAST CONFIRMED EVENT</p>
             <div class="flex flex-col items-center justify-center">
@@ -52,13 +49,13 @@
         const TOPIC = 'sound/report';
         const client = mqtt.connect(BROKER_URL);
 
-        // Thresholds configuration
+        // Defined thresholds
         const THRESHOLDS = {
             "Whistle": 95,
             "Hey": 70,
             "Snap": 55,
             "Clap": 60,
-            "Noise": 0 // Fallback
+            "Noise": 0 
         };
 
         const ui = {
@@ -81,10 +78,8 @@
             try {
                 const data = JSON.parse(message.toString());
                 
-                // If this is a status update containing scores
                 if (data.status === "alive" && data.Noise !== undefined) {
                     
-                    // 1. Determine Winner Logic
                     const scores = {
                         "Noise": data.Noise,
                         "Whistle": data.Whistle,
@@ -93,36 +88,55 @@
                         "Snap": data.Snap
                     };
 
-                    // Find key with max value
-                    let winner = Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
-                    let maxVal = scores[winner];
+                    // --- NEW LOGIC START ---
 
-                    // 2. Apply Thresholds
-                    let finalDecision = "Noise"; // Default to noise
+                    // 1. Find all classes that are strictly above (or equal to) their threshold
+                    let candidates = Object.keys(scores).filter(key => scores[key] >= THRESHOLDS[key]);
+
+                    // 2. Prioritize Logic: 
+                    // If we have specific sounds (Whistle, Snap, etc.) AND Noise in the list, remove Noise.
+                    const specificCandidates = candidates.filter(k => k !== "Noise");
                     
-                    if (winner !== "Noise" && maxVal >= THRESHOLDS[winner]) {
-                        finalDecision = winner;
+                    if (specificCandidates.length > 0) {
+                        // We have actual events, so we ignore Noise
+                        candidates = specificCandidates;
+                    } 
+                    // If specificCandidates is empty, 'candidates' remains just ["Noise"] (assuming Noise > 0) or empty.
+
+                    let finalDecision = "Noise";
+                    let finalScore = scores["Noise"];
+                    let maxDiff = -Infinity;
+
+                    // 3. Selection: Choose highest difference (Score - Threshold)
+                    if (candidates.length > 0) {
+                        candidates.forEach(key => {
+                            let diff = scores[key] - THRESHOLDS[key];
+                            if (diff > maxDiff) {
+                                maxDiff = diff;
+                                finalDecision = key;
+                                finalScore = scores[key];
+                            }
+                        });
                     }
 
-                    // 3. Update UI
+                    // --- NEW LOGIC END ---
+
+                    // UI Updates
                     if (finalDecision === "Noise") {
                         ui.liveSound.textContent = "NOTHING DETECTED";
-                        ui.liveConf.textContent = maxVal + "%";
+                        ui.liveConf.textContent = finalScore + "%";
                         ui.liveCard.className = "rounded-xl p-8 transition-colors duration-200 bg-gray-200";
                         ui.liveSound.className = "text-5xl font-black mb-4 transition-colors duration-200 text-gray-500";
                         ui.liveConf.className = "text-xl font-bold text-gray-500";
                     } else {
-                        // Real detection
                         ui.liveSound.textContent = finalDecision.toUpperCase();
-                        ui.liveConf.textContent = maxVal + "%";
+                        ui.liveConf.textContent = finalScore + "%";
                         ui.liveCard.className = "rounded-xl p-8 transition-colors duration-200 bg-green-100";
                         ui.liveSound.className = "text-6xl font-black mb-4 transition-colors duration-200 text-green-800";
                         ui.liveConf.className = "text-xl font-bold text-green-700";
 
-                        // Update Footer History
                         ui.histSound.textContent = finalDecision.toUpperCase();
-                        
-                        // Pop Animation Footer
+
                         ui.histBox.classList.remove('scale-100');
                         ui.histBox.classList.add('scale-110', 'border-indigo-300');
                         setTimeout(() => {
